@@ -1,0 +1,15 @@
+# env
+.env
+
+# logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+
+# Go build files
+bin/
+dist/
+*.exe
+*.out
