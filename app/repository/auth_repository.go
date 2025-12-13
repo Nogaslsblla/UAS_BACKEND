@@ -3,7 +3,7 @@ package repository
 import (
 	"database/sql"
 	"errors"
-	model "uas_backend/model/Postgresql"
+	model "uas_backend/app/model/Postgresql"
 
 	"github.com/google/uuid"
 )
@@ -39,8 +39,8 @@ func (r *AuthRepository) FindUserByEmailOrUsername(identifier string) (*model.Us
 		&user.FullName,
 		&user.RoleID,
 		&user.ISActive,
-		&user.Created_at,
-		&user.Updated_at,
+		&user.CreatedAt,
+		&user.UpdatedAt,
 		&roleName,
 	)
 
@@ -78,4 +78,81 @@ func (r *AuthRepository) GetPermissionsByRoleID(roleID uuid.UUID) ([]string, err
 	}
 
 	return permissions, nil
+}
+func (r *AuthRepository) GetUserProfile(userID uuid.UUID) (*model.ProfileData, error) {
+	var user model.Users
+	var roleName string
+
+	// Get user basic info
+	userQuery := `
+		SELECT 
+			u.id, u.username, u.email, u.full_name, 
+			u.role_id, u.is_active, u.created_at, u.updated_at,
+			r.name
+		FROM users u
+		JOIN roles r ON u.role_id = r.id
+		WHERE u.id = $1
+		LIMIT 1
+	`
+
+	err := r.DB.QueryRow(userQuery, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.FullName,
+		&user.RoleID,
+		&user.ISActive,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&roleName,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+
+	profileData := &model.ProfileData{}
+
+	// Check if user is a student
+	studentQuery := `
+		SELECT student_id, program_study, academic_year, advisor_id
+		FROM students
+		WHERE user_id = $1
+		LIMIT 1
+	`
+
+	var studentID, programStudy, academicYear string
+	var advisorID uuid.UUID
+	err = r.DB.QueryRow(studentQuery, userID).Scan(&studentID, &programStudy, &academicYear, &advisorID)
+	if err == nil {
+		// User is a student
+		profileData.StudentID = studentID
+		profileData.ProgramStudy = programStudy
+		profileData.AcademicYear = academicYear
+		profileData.AdvisorID = advisorID
+		return profileData, nil
+	}
+
+	// Check if user is a lecturer
+	lecturerQuery := `
+		SELECT lecturer_id, department
+		FROM lecturers
+		WHERE user_id = $1
+		LIMIT 1
+	`
+
+	var lecturerID, department string
+	err = r.DB.QueryRow(lecturerQuery, userID).Scan(&lecturerID, &department)
+	if err == nil {
+		// User is a lecturer
+		profileData.LecturerID = lecturerID
+		profileData.Department = department
+		return profileData, nil
+	}
+
+	// User has no specific profile (admin or other role)
+	return profileData, nil
 }
