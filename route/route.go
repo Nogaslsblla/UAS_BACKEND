@@ -16,3 +16,17 @@ authService := service.NewAuthService(authRepo)
 	})
 	auth.Post("/logout", middleware.AuthMiddleware(""), authService.LogoutEndpoint)
 	auth.Get("/profile", middleware.AuthMiddleware(""), authService.ProfileEndpoint)
+
+
+userRepo := repository.NewUserRepository(db)
+userService := service.NewUserService(userRepo)
+	
+	// Users Routes (Admin only)
+		users := API.Group("/users")
+		users.Use(middleware.AuthMiddleware("manage_users"))
+		users.Get("/", userService.GetUsersEndpoint)
+		users.Get("/:id", userService.GetUserByIDEndpoint)
+		users.Post("/", userService.CreateUserEndpoint)
+		users.Put("/:id", userService.UpdateUserEndpoint)
+		users.Delete("/:id", userService.DeleteUserEndpoint)
+		users.Put("/:id/role", userService.UpdateUserRoleEndpoint)
