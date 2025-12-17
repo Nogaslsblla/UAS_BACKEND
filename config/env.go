@@ -2,30 +2,35 @@ package config
 
 import (
 	"os"
+
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	AppPort   string
-	DBHost    string
-	DBPort    string
-	DBUser    string
-	DBPass    string
-	DBName    string
-	DBSSLMode string
+	AppPort     string
+	DBHost      string
+	DBPort      string
+	DBUser      string
+	DBPass      string
+	DBName      string
+	DBSSLMode   string
+	MongoURI    string
+	MongoDBName string
 }
 
 func LoadConfig() *Config {
 	godotenv.Load()
 
 	return &Config{
-		AppPort:   getEnv("APP_PORT", "3000"),
-		DBHost:    getEnv("DB_HOST", "localhost"),
-		DBPort:    getEnv("DB_PORT", "5432"),
-		DBUser:    getEnv("DB_USER", "postgres"),
-		DBPass:    getEnv("DB_PASS", "postgres"),
-		DBName:    getEnv("DB_NAME", "uas_backend"),
-		DBSSLMode: getEnv("DB_SSLMODE", "disable"),
+		AppPort:     getEnv("APP_PORT", "3000"),
+		DBHost:      getEnv("DB_HOST", "localhost"),
+		DBPort:      getEnv("DB_PORT", "5432"),
+		DBUser:      getEnv("DB_USER", "postgres"),
+		DBPass:      getEnv("DB_PASS", "postgres"),
+		DBName:      getEnv("DB_NAME", "uas_backend"),
+		DBSSLMode:   getEnv("DB_SSLMODE", "disable"),
+		MongoURI:    getEnv("MONGO_URI", "mongodb://localhost:27017"),
+		MongoDBName: getEnv("MONGO_DB_NAME", "uas_backend"),
 	}
 }
 
