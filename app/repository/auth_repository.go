@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	model "uas_backend/app/model/Postgresql"
@@ -79,6 +80,45 @@ func (r *AuthRepository) GetPermissionsByRoleID(roleID uuid.UUID) ([]string, err
 
 	return permissions, nil
 }
+
+func (r *AuthRepository) GetUserByID(ctx context.Context, userID uuid.UUID) (*model.Users, string, error) {
+	var user model.Users
+	var roleName string
+
+	query := `
+		SELECT 
+			u.id, u.username, u.email, u.password_hash, u.full_name, 
+			u.role_id, u.is_active, u.created_at, u.updated_at,
+			r.name
+		FROM users u
+		JOIN roles r ON u.role_id = r.id
+		WHERE u.id = $1
+		LIMIT 1
+	`
+
+	err := r.DB.QueryRowContext(ctx, query, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&user.FullName,
+		&user.RoleID,
+		&user.ISActive,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&roleName,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, "", errors.New("user not found")
+		}
+		return nil, "", err
+	}
+
+	return &user, roleName, nil
+}
+
 func (r *AuthRepository) GetUserProfile(userID uuid.UUID) (*model.ProfileData, error) {
 	var user model.Users
 	var roleName string
