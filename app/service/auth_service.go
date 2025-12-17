@@ -16,11 +16,13 @@ import (
 type AuthService interface {
 	Login(ctx context.Context, req model.LoginRequest) (*model.LoginResponse, error)
 	Logout(ctx context.Context, token string) error
+	RefreshToken(ctx context.Context, token string) (*model.LoginResponse, error)
 	GetProfile(ctx context.Context, userID uuid.UUID) (*model.ProfileData, error)
 
 	// HTTP endpoints
 	LoginEndpoint(c *fiber.Ctx) error
 	LogoutEndpoint(c *fiber.Ctx) error
+	RefreshTokenEndpoint(c *fiber.Ctx) error
 	ProfileEndpoint(c *fiber.Ctx) error
 }
 
@@ -59,23 +61,23 @@ func extractUserIDFromClaimsAuth(c *fiber.Ctx) (uuid.UUID, error) {
 
 func (s *authService) Login(ctx context.Context, req model.LoginRequest) (*model.LoginResponse, error) {
 	identifier := req.Username
-		if identifier == "" {
-			identifier = req.Email
-		}
+	if identifier == "" {
+		identifier = req.Email
+	}
 
 	if identifier == "" {
-         return nil, errors.New("username or email is required")
-    }
+		return nil, errors.New("username or email is required")
+	}
 
 	user, roleName, err := s.authRepo.FindUserByEmailOrUsername(identifier)
 
 	if err != nil {
-        return nil, errors.New("invalid username or email")
-    }
+		return nil, errors.New("invalid username or email")
+	}
 
-    if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
-        return nil, errors.New("invalid password")
-    }
+	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
+		return nil, errors.New("invalid password")
+	}
 
 	if !user.ISActive {
 		return nil, errors.New("account is inactive, please contact admin")
@@ -114,6 +116,74 @@ func (s *authService) Logout(ctx context.Context, token string) error {
 	// Add token to in-memory blacklist
 	utils.BlacklistManager.AddToken(token, expiresAt)
 	return nil
+}
+
+func (s *authService) RefreshToken(ctx context.Context, token string) (*model.LoginResponse, error) {
+	// Validate the current token
+	claims, err := utils.ValidateToken(token)
+	if err != nil {
+		return nil, errors.New("invalid or expired token")
+	}
+
+	// Check if token is blacklisted
+	if utils.BlacklistManager.IsBlacklisted(token) {
+		return nil, errors.New("token has been revoked")
+	}
+
+	// Extract user ID from claims
+	userIDStr, ok := claims["user_id"].(string)
+	if !ok {
+		return nil, errors.New("invalid user ID in token")
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return nil, errors.New("invalid user ID format")
+	}
+
+	// Get fresh user data
+	user, roleName, err := s.authRepo.FindUserByEmailOrUsername(userIDStr)
+	if err != nil {
+		// Try to get user by ID if username lookup fails
+		user, roleName, err = s.authRepo.GetUserByID(ctx, userID)
+		if err != nil {
+			return nil, errors.New("user not found")
+		}
+	}
+
+	if !user.ISActive {
+		return nil, errors.New("account is inactive")
+	}
+
+	// Get fresh permissions
+	permissions, err := s.authRepo.GetPermissionsByRoleID(user.RoleID)
+	if err != nil {
+		return nil, errors.New("failed to fetch permissions")
+	}
+
+	// Generate new token
+	newToken, err := utils.GenerateJWT(user.ID.String(), user.Username, roleName, permissions)
+	if err != nil {
+		return nil, errors.New("failed to generate new token")
+	}
+
+	// Blacklist the old token
+	expiresAt, err := utils.GetTokenExpiration(token)
+	if err == nil {
+		utils.BlacklistManager.AddToken(token, expiresAt)
+	}
+
+	return &model.LoginResponse{
+		Token:        newToken,
+		RefreshToken: "",
+		User: model.UserResponse{
+			ID:          user.ID,
+			Username:    user.Username,
+			FullName:    user.FullName,
+			Role:        roleName,
+			Permissions: permissions,
+		},
+	}, nil
 }
 
 func (s *authService) GetProfile(ctx context.Context, userID uuid.UUID) (*model.ProfileData, error) {
@@ -174,6 +244,43 @@ func (s *authService) LogoutEndpoint(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "Logout successful",
+	})
+}
+
+func (s *authService) RefreshTokenEndpoint(c *fiber.Ctx) error {
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "Missing Authorization Header"})
+	}
+
+	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid Authorization Header format"})
+	}
+
+	token := authHeader[7:]
+	if token == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "Token is empty"})
+	}
+
+	result, err := s.RefreshToken(c.Context(), token)
+	if err != nil {
+		switch err.Error() {
+		case "invalid or expired token":
+			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		case "token has been revoked":
+			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		case "user not found":
+			return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+		case "account is inactive":
+			return c.Status(403).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return c.Status(500).JSON(fiber.Map{"error": "Token refresh failed"})
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"status": "success",
+		"data":   result,
 	})
 }
 
