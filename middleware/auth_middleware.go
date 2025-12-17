@@ -3,12 +3,16 @@ package middleware
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
 	"uas_backend/helper"
 	"uas_backend/utils"
+
+	"github.com/gofiber/fiber/v2"
 )
 
-func RBAC(requiredPermission string) fiber.Handler {
+// Alias untuk tipe middleware
+type MiddlewareFunc = fiber.Handler
+
+func AuthMiddleware(requiredPermission string) MiddlewareFunc {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -18,6 +22,11 @@ func RBAC(requiredPermission string) fiber.Handler {
 		tokenString := utils.ExtractToken(authHeader)
 		if tokenString == "" {
 			return helper.Error(c, fiber.StatusUnauthorized, "Invalid Token Format")
+		}
+
+		// Check if token is blacklisted (in-memory)
+		if utils.BlacklistManager.IsBlacklisted(tokenString) {
+			return helper.Error(c, fiber.StatusUnauthorized, "Token has been revoked. Please login again.")
 		}
 
 		claims, err := utils.ValidateToken(tokenString)
