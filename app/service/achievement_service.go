@@ -330,7 +330,7 @@ func (s *achievementService) VerifyAchievement(ctx context.Context, userID uuid.
 	}
 
 	// 6. Update status menjadi 'verified' dengan verified_by dan verified_at
-	err = s.repo.UpdateAchievementStatusToVerified(ctx, achievementID, lecturer.ID)
+	err = s.repo.UpdateAchievementStatusToVerified(ctx, achievementID, lecturer.UserID)
 	if err != nil {
 		return nil, errors.New("failed to verify achievement")
 	}
